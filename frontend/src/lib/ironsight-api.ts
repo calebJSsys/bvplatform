@@ -752,23 +752,7 @@ export async function revokeEvidenceShareLink(token: string): Promise<void> {
 }
 
 // ── Feature Flags ──
-
-// Default feature flags returned when the backend is unreachable.
-// These are static and conservative — they grant the standard
-// capability set so a transient backend blip doesn't toggle the UI
-// into a degraded mode mid-shift.
-const DEFAULT_FEATURE_FLAGS: Record<string, boolean> = {
-  vlm_safety: true,
-  semantic_search: true,
-  evidence_sharing: true,
-  global_ai_training: true,
-};
-
-export async function getFeatureFlags(siteId?: string): Promise<Record<string, boolean>> {
-  try {
-    const params = siteId ? `?site_id=${siteId}` : '';
-    return await fetchJSON(`${BASE}/features${params}`);
-  } catch {
-    return DEFAULT_FEATURE_FLAGS;
-  }
-}
+// Canonical flag fetching lives in lib/feature-flags.ts (API-backed,
+// mirrors api.DefaultFeatureFlags, defaults parked-OFF). The former
+// getFeatureFlags() duplicate here was dead code (zero callers) and its
+// optimistic all-on defaults contradicted the MVP descope — removed.
