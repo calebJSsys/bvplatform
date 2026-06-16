@@ -4,13 +4,11 @@ import { useState } from 'react';
 import { CameraSection, SpeakerSection } from './AssignCameraModal';
 import CreateSiteModal from './CreateSiteModal';
 import SiteSOPModal from './SiteSOPModal';
-import SiteMapModal from './SiteMapModal';
-import NotificationRulesModal from './NotificationRulesModal';
 import SiteScheduleModal from './SiteScheduleModal';
 import UserAssignmentModal from './CustomerAccessModal';
 import SiteRecordingPanel from './SiteRecordingPanel';
 
-type ConfigTab = 'details' | 'cameras' | 'speakers' | 'recording' | 'sops' | 'users' | 'schedule' | 'notifications' | 'map' | 'danger';
+type ConfigTab = 'details' | 'cameras' | 'speakers' | 'recording' | 'sops' | 'users' | 'schedule' | 'danger';
 
 interface NavItem {
   key: ConfigTab;
@@ -26,9 +24,12 @@ const NAV: NavItem[] = [
   { key: 'recording',     label: 'Recording & Retention', section: 'Devices',   desc: 'Recording mode, buffers, triggers and retention for every camera on this site.' },
   { key: 'sops',          label: 'Standard Procedures',  section: 'Operations', desc: 'Standard operating procedures for SOC operators monitoring this site.' },
   { key: 'schedule',      label: 'Monitoring Schedule',  section: 'Operations', desc: 'Define when the SOC actively monitors this site.' },
-  { key: 'notifications', label: 'Alert Rules',          section: 'Operations', desc: 'Configure alert routing — who gets notified and how.' },
+  // 'Alert Rules' (notifications) and 'Site Map' (map) tabs are hidden for the
+  // MVP: their backend routes are not provisioned, so create/save/upload would
+  // silently no-op and mislead. The components (NotificationRulesModal /
+  // SiteMapModal) are kept for revival — re-add the NAV entries + render
+  // branches once the backends land. See 2026-06 MVP descope.
   { key: 'users',         label: 'User Access',          section: 'Access',     desc: 'Control which customer users can view this site in the portal.' },
-  { key: 'map',           label: 'Site Map',             section: 'Access',     desc: 'Upload or configure the site floor plan with camera positions.' },
   { key: 'danger',        label: 'Archive & Delete',     section: 'Danger',     desc: 'Archive this site to disable monitoring, or permanently delete all data.' },
 ];
 
@@ -204,9 +205,7 @@ export default function SiteConfigModal({ siteId, siteName, initialTab = 'detail
             {tab === 'recording' && <SiteRecordingPanel siteId={siteId} siteName={siteName} />}
             {tab === 'sops' && <SiteSOPModal siteId={siteId} onClose={noop} embedded />}
             {tab === 'schedule' && <SiteScheduleModal siteId={siteId} onClose={noop} embedded />}
-            {tab === 'notifications' && <NotificationRulesModal siteId={siteId} onClose={noop} embedded />}
             {tab === 'users' && <UserAssignmentModal siteId={siteId} onClose={noop} embedded />}
-            {tab === 'map' && <SiteMapModal siteId={siteId} onClose={noop} embedded />}
             {tab === 'danger' && (
               <DangerZone siteId={siteId} siteName={siteName} onArchived={onClose} onDeleted={() => { onDeleted?.(); onClose(); }} />
             )}
