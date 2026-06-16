@@ -26,7 +26,13 @@ export default function NotificationRulesModal({ siteId, onClose, embedded }: Pr
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    getNotificationRules(siteId).then(data => { setRules(data); setLoading(false); });
+    // Guard: the per-site notification-rules route is not provisioned in
+    // every build. Without .finally, a 404 leaves loading=true forever
+    // (permanent "Loading…" skeleton). Degrade to an empty list instead.
+    getNotificationRules(siteId)
+      .then(data => { setRules(data); })
+      .catch(() => { /* route unavailable in this build */ })
+      .finally(() => setLoading(false));
   }, [siteId]);
 
   const handleDelete = async (ruleId: string) => {

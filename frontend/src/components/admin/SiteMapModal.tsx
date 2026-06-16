@@ -39,17 +39,23 @@ export default function SiteMapModal({ siteId, onClose, embedded }: Props) {
   const [floorPlanUrl, setFloorPlanUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    // Guard: the site-map routes are not provisioned in every build. Without
+    // .finally, a 404 on any of these rejects the whole batch and leaves
+    // loading=true forever ("Loading site map…" skeleton). Degrade to the
+    // empty grid instead so the tab is at least usable/closable.
     Promise.all([
       getSiteMap(siteId),
       getCameraAssignments(siteId),
       getExclusionZones(siteId),
-    ]).then(([map, cams, zones]) => {
-      setMapData(map);
-      if (map?.image_url) setFloorPlanUrl(map.image_url);
-      setCameras(cams);
-      setExclusionZones(zones);
-      setLoading(false);
-    });
+    ])
+      .then(([map, cams, zones]) => {
+        setMapData(map);
+        if (map?.image_url) setFloorPlanUrl(map.image_url);
+        setCameras(cams);
+        setExclusionZones(zones);
+      })
+      .catch(() => { /* one or more site-map routes unavailable in this build */ })
+      .finally(() => setLoading(false));
   }, [siteId]);
 
   const markers = mapData?.markers || [];

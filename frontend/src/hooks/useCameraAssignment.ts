@@ -96,37 +96,11 @@ export function useMasterSpeakers() {
 // Keep old name as alias for backward compat
 export const useIRONSightCameras = useMasterCameras;
 
-/** Create a new camera in master registry */
-export function useCreateCamera() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (data: { name: string; onvif_address?: string; manufacturer?: string; model?: string }) => {
-      const res = await fetch('/api/v1/cameras', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['master-cameras'] });
-    },
-  });
-}
-
-/** Delete a camera from master registry */
-export function useDeleteCamera() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (cameraId: string) => {
-      await fetch(`/api/v1/cameras/${cameraId}`, { method: 'DELETE' });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['master-cameras'] });
-      queryClient.invalidateQueries({ queryKey: ['sites'] });
-    },
-  });
-}
+// Removed: useCreateCamera / useDeleteCamera. Both were caller-less dead
+// code and sent state-changing POST/DELETE with no X-CSRF-Token header
+// (would 403 under the CSRF guard). Camera create/delete go through the
+// NVR admin flow (HandleCreateCamera/HandleDeleteCamera) which is RBAC- +
+// CSRF-protected; re-add a hook here only if a UI needs it, with CSRF.
 
 /** Fetch camera assignments for a site */
 export function useCameraAssignments(siteId: string | null) {
