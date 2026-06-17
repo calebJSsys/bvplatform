@@ -4,6 +4,7 @@ import RouteGuard from '@/components/shared/RouteGuard';
 import PortalMobileNav from '@/components/portal/PortalMobileNav';
 import SupportWidget from '@/components/portal/SupportWidget';
 import PortalLegalFooter from '@/components/portal/PortalLegalFooter';
+import { FeatureGate } from '@/components/shared/FeatureGate';
 
 export default function PortalLayout({ children }: { children: ReactNode }) {
     return (
@@ -24,7 +25,9 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
                 {/* SOC support chat widget — floating bubble bottom-right
                     that opens a slide-out panel for ticket history +
                     new messages. Hides itself for soc_operator role. */}
-                <SupportWidget />
+                <FeatureGate flag="support_tickets">
+                    <SupportWidget />
+                </FeatureGate>
             </div>
         </RouteGuard>
     );

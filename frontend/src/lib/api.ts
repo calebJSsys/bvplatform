@@ -722,6 +722,51 @@ export async function listExports(): Promise<ExportJob[]> {
 }
 
 // -----------------------------------------------------------------------------
+// Bookmarks (user-flagged timeline moments). Backend: GET/POST /api/bookmarks,
+// DELETE /api/bookmarks/{id} (internal/api/audit.go).
+// -----------------------------------------------------------------------------
+export interface Bookmark {
+    id: string;
+    camera_id: string;
+    event_time: string;   // RFC3339
+    label: string;
+    notes: string;
+    severity: string;     // info | warning | critical
+    username?: string;
+    created_at: string;
+}
+
+export async function fetchBookmarks(start: Date, end: Date, cameraId?: string): Promise<Bookmark[]> {
+    const qs = new URLSearchParams({ start: start.toISOString(), end: end.toISOString() });
+    if (cameraId) qs.set('camera_id', cameraId);
+    try {
+        const res = await authFetch(`${API_BASE}/bookmarks?${qs.toString()}`);
+        const data = await res.json();
+        return Array.isArray(data) ? data : [];
+    } catch { return []; }
+}
+
+export async function createBookmark(data: {
+    camera_id: string;
+    event_time: string;   // RFC3339
+    label: string;
+    notes?: string;
+    severity?: string;
+}): Promise<Bookmark> {
+    const res = await authFetch(`${API_BASE}/bookmarks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error((await res.text()) || 'failed to create bookmark');
+    return res.json();
+}
+
+export async function deleteBookmark(id: string): Promise<void> {
+    await authFetch(`${API_BASE}/bookmarks/${id}`, { method: 'DELETE' });
+}
+
+// -----------------------------------------------------------------------------
 // PTZ
 // -----------------------------------------------------------------------------
 
