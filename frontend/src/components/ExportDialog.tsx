@@ -6,10 +6,15 @@ import { Camera, ExportJob, createExport, listExports } from '@/lib/api';
 interface ExportDialogProps {
     cameras: Camera[];
     onClose: () => void;
+    /** Pre-select a camera (e.g. the timeline's isolated camera). */
+    defaultCameraId?: string;
+    /** Pre-fill the export range (e.g. the timeline's visible window). */
+    defaultStart?: Date;
+    defaultEnd?: Date;
 }
 
-export default function ExportDialog({ cameras, onClose }: ExportDialogProps) {
-    const [selectedCamera, setSelectedCamera] = useState(cameras[0]?.id || '');
+export default function ExportDialog({ cameras, onClose, defaultCameraId, defaultStart, defaultEnd }: ExportDialogProps) {
+    const [selectedCamera, setSelectedCamera] = useState(defaultCameraId || cameras[0]?.id || '');
     const [startTime, setStartTime] = useState('');
     const [endTime, setEndTime] = useState('');
     const [exports, setExports] = useState<ExportJob[]>([]);
@@ -19,14 +24,15 @@ export default function ExportDialog({ cameras, onClose }: ExportDialogProps) {
     // Set default times (last hour)
     useEffect(() => {
         setIsMounted(true);
-        const now = new Date();
-        const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+        const end = defaultEnd ?? new Date();
+        const start = defaultStart ?? new Date(end.getTime() - 60 * 60 * 1000);
 
-        setEndTime(formatDateTimeLocal(now));
-        setStartTime(formatDateTimeLocal(oneHourAgo));
+        setEndTime(formatDateTimeLocal(end));
+        setStartTime(formatDateTimeLocal(start));
 
         // Load existing exports
         loadExports();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadExports = async () => {

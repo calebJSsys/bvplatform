@@ -1,7 +1,8 @@
 'use client';
 
 import { useRef, useMemo, useCallback, useState, useEffect } from 'react';
-import { Camera, Event, TimelineBucket, SegmentCoverage, fetchCoverage } from '@/lib/api';
+import { Camera, Event, TimelineBucket, SegmentCoverage, fetchCoverage, Bookmark, fetchBookmarks, createBookmark, deleteBookmark } from '@/lib/api';
+import ExportDialog from './ExportDialog';
 
 interface TimelineProps {
     buckets: TimelineBucket[];
@@ -93,6 +94,9 @@ export default function Timeline({
     const [isMounted, setIsMounted] = useState(false);
     // Hovered event marker (for tooltip). Holds the marker index.
     const [hoverMarker, setHoverMarker] = useState<number | null>(null);
+    // Bookmarks visible in the current window + export-dialog visibility.
+    const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+    const [showExport, setShowExport] = useState(false);
 
     useEffect(() => {
         setIsMounted(true);
@@ -131,6 +135,43 @@ export default function Timeline({
         return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [coverageStartKey, coverageEndKey, cameras.map(c => c.id).join(',')]);
+
+    // ── Bookmarks (user-flagged moments) ──
+    // Fetch for the visible window (debounced on the same 30s keys as coverage);
+    // scoped to the isolated camera when one is focused, else all cameras.
+    const refreshBookmarks = useCallback(() => {
+        return fetchBookmarks(startTime, endTime, isolatedCamera ?? undefined)
+            .then(setBookmarks)
+            .catch(() => { });
+    }, [startTime, endTime, isolatedCamera]);
+    useEffect(() => {
+        let cancelled = false;
+        fetchBookmarks(startTime, endTime, isolatedCamera ?? undefined)
+            .then(bs => { if (!cancelled) setBookmarks(bs); })
+            .catch(() => { });
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [coverageStartKey, coverageEndKey, isolatedCamera]);
+
+    // Camera a new bookmark / export targets: the isolated camera, else the first.
+    const bookmarkCameraId = isolatedCamera ?? cameras[0]?.id ?? '';
+
+    const handleAddBookmark = useCallback(async () => {
+        if (!bookmarkCameraId) return;
+        const label = typeof window !== 'undefined' ? window.prompt('Bookmark label for this moment:') : null;
+        if (!label || !label.trim()) return;
+        try {
+            await createBookmark({ camera_id: bookmarkCameraId, event_time: currentTime.toISOString(), label: label.trim() });
+            await refreshBookmarks();
+        } catch { /* if it failed, no new marker appears */ }
+    }, [bookmarkCameraId, currentTime, refreshBookmarks]);
+
+    const handleDeleteBookmark = useCallback(async (id: string) => {
+        try {
+            await deleteBookmark(id);
+            setBookmarks(prev => prev.filter(b => b.id !== id));
+        } catch { /* ignore */ }
+    }, []);
 
     // Pre-compute coverage bar segments clipped to visible window
     const coverageBars = useMemo(() => {
@@ -682,6 +723,26 @@ export default function Timeline({
                             −
                         </button>
                     </div>
+
+                    {/* Divider */}
+                    <span style={{ width: 1, height: 20, background: 'var(--border-color)', flexShrink: 0 }} />
+
+                    {/* Bookmark this moment + download/export a clip */}
+                    <button
+                        className="btn btn-sm"
+                        onClick={handleAddBookmark}
+                        disabled={!bookmarkCameraId}
+                        title={bookmarkCameraId ? 'Bookmark this moment' : 'Isolate a camera to bookmark'}
+                    >
+                        🔖 Mark
+                    </button>
+                    <button
+                        className="btn btn-sm"
+                        onClick={() => setShowExport(true)}
+                        title="Download / export a clip from this view"
+                    >
+                        ⤓ Export
+                    </button>
                 </div>
 
                 <div className="timeline-right">
@@ -854,6 +915,43 @@ export default function Timeline({
                     )}
                 </div>
 
+                {/* Bookmarks — user-flagged moments as small severity-colored
+                    flags at the top of the track. Click seeks; shift-click deletes. */}
+                {bookmarks.map((bm) => {
+                    const pos = ((new Date(bm.event_time).getTime() - startTime.getTime()) / windowMs) * 100;
+                    if (pos < 0 || pos > 100) return null;
+                    const color = bm.severity === 'critical' ? '#ef4444' : bm.severity === 'warning' ? '#f59e0b' : '#3b82f6';
+                    return (
+                        <button
+                            key={bm.id}
+                            type="button"
+                            className="timeline-bookmark"
+                            style={{
+                                position: 'absolute', top: 0, left: `${pos}%`,
+                                transform: 'translateX(-50%)', zIndex: 7,
+                                background: 'transparent', border: 'none', padding: '0 2px',
+                                cursor: 'pointer', lineHeight: 1,
+                            }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (e.shiftKey) handleDeleteBookmark(bm.id);
+                                else onSeek(new Date(bm.event_time));
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            title={`🔖 ${bm.label}${bm.username ? ' · ' + bm.username : ''} — ${isMounted ? new Date(bm.event_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''} (click to seek, shift-click to delete)`}
+                            aria-label={`Bookmark: ${bm.label}`}
+                        >
+                            <span style={{
+                                display: 'block', width: 0, height: 0,
+                                borderLeft: '5px solid transparent',
+                                borderRight: '5px solid transparent',
+                                borderTop: `9px solid ${color}`,
+                                filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.4))',
+                            }} />
+                        </button>
+                    );
+                })}
+
                 {/* Coverage bars — rendered at the very bottom of the track */}
                 <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 6, pointerEvents: 'none' }}>
                     {/* Video coverage — green */}
@@ -890,6 +988,16 @@ export default function Timeline({
                     ))}
                 </div>
             </div>
+
+            {showExport && (
+                <ExportDialog
+                    cameras={cameras}
+                    defaultCameraId={isolatedCamera ?? undefined}
+                    defaultStart={startTime}
+                    defaultEnd={endTime}
+                    onClose={() => setShowExport(false)}
+                />
+            )}
 
             {/* Timeline ruler labels — one label per MAJOR tick, positioned
                 at the same x as its in-track tick so the scale reads true. */}
