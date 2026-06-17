@@ -8,6 +8,7 @@ import {
 } from '@/lib/api';
 import VideoPlayer from '@/components/VideoPlayer';
 import CameraGrid from '@/components/CameraGrid';
+import LeftSidebarNav from '@/components/LeftSidebarNav';
 import Timeline from '@/components/Timeline';
 import EventListPanel from '@/components/EventListPanel';
 
@@ -664,6 +665,18 @@ function HomeInner() {
                 </div>
             )}
 
+            <div className="app-body">
+            <LeftSidebarNav
+                selectedSiteId={siteIdParam}
+                selectedCameraId={selectedCamera}
+                onSelectSite={(id) => router.push(id ? `/?site_id=${id}` : '/')}
+                onSelectCamera={(cameraId, sid) => {
+                    if (sid && sid !== siteIdParam) router.push(`/?site_id=${sid}`);
+                    setSelectedCamera(cameraId);
+                    setPage('live');
+                }}
+            />
+
             {/* Main Content */}
             <div className="main-content">
                 {page === 'live' && (
@@ -726,6 +739,7 @@ function HomeInner() {
                         <MapView cameras={cameras} onCameraClick={(id) => { setPeekCameraId(id); switchPage('live'); }} />
                     </div>
                 )}
+            </div>
             </div>
 
             {/* Event List Panel (Slide-out) */}
