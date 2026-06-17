@@ -345,6 +345,138 @@ body::before {
 }
 
 /* ========================================
+   M1.5 LEFT TREE-NAV SHELL (Company › Site › Camera)
+   ======================================== */
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.app-body .main-content { min-width: 0; }
+.sidebar-nav {
+  width: 264px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary, #0e1117);
+  border-right: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  overflow: hidden;
+}
+.sidebar-nav.sidebar-collapsed {
+  width: 34px;
+  align-items: center;
+  padding-top: 8px;
+}
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-muted, #8891a5);
+  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.06));
+  flex-shrink: 0;
+}
+.sidebar-toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted, #8891a5);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  font-family: var(--font-family, sans-serif);
+}
+.sidebar-toggle:hover { color: var(--text-primary, #e4e8f0); }
+.sidebar-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 4px;
+}
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-primary, #e4e8f0);
+  font-family: var(--font-family, sans-serif);
+  font-size: 13px;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.tree-row:hover { background: rgba(255, 255, 255, 0.05); }
+.tree-selected { background: rgba(232, 115, 42, 0.15); color: var(--accent-orange, #e8732a); }
+.tree-company-row { font-weight: 600; }
+.tree-site-row { padding: 0; }
+.tree-site-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font-family: var(--font-family, sans-serif);
+  font-size: 13px;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.tree-site-label:hover { background: rgba(255, 255, 255, 0.05); }
+.tree-chevron {
+  background: none;
+  border: none;
+  color: var(--text-muted, #8891a5);
+  cursor: pointer;
+  font-size: 10px;
+  width: 16px;
+  flex-shrink: 0;
+  padding: 0;
+  transition: transform 0.12s ease;
+}
+.tree-chevron.open { transform: rotate(90deg); }
+.tree-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-count {
+  font-size: 10px;
+  color: var(--text-muted, #8891a5);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.tree-icon { font-size: 11px; flex-shrink: 0; }
+.tree-site { padding-left: 10px; }
+.tree-camera-row { padding-left: 24px; font-size: 12px; }
+.cam-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.cam-dot.online { background: var(--accent-green, #22c55e); }
+.cam-dot.offline { background: #6b7280; }
+.tree-empty {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-muted, #8891a5);
+  font-style: italic;
+}
+
+/* ========================================
    VIDEO GRID
    ======================================== */
 
