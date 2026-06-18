@@ -13,6 +13,7 @@ import Timeline from '@/components/Timeline';
 import EventListPanel from '@/components/EventListPanel';
 
 import ExportDialog from '@/components/ExportDialog';
+import PTZPanel from '@/components/PTZPanel';
 import AnalyticsDashboard from '@/components/AnalyticsDashboard';
 import MapView from '@/components/MapView';
 import { ToastProvider, useToast } from '@/components/ToastProvider';
@@ -808,11 +809,19 @@ function HomeInner() {
                                 playbackTime={playbackTime}
                                 hasPTZ={peekCamera.has_ptz}
                                 allowZoom={true}
+                                forceLowLatency={peekCamera.has_ptz}
+                                hidePtzButtons={peekCamera.has_ptz}
                                 streamQuality="high"
                                 wsRef={wsRef}
                                 globalPaused={globalPaused}
                                 playbackRate={playbackRate}
                             />
+                            {/* Full PTZ panel (joystick + optical zoom + presets) — live PTZ cams only */}
+                            {peekCamera.has_ptz && isLive && (
+                                <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 14px', background: 'rgba(0,0,0,0.4)' }}>
+                                    <PTZPanel cameraId={peekCamera.id} />
+                                </div>
+                            )}
                             {/* Speaker Talk-Down Bar */}
                             {peekSpeakers.length > 0 && (
                                 <div style={{

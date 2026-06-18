@@ -3,6 +3,7 @@
 import { useParams } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import VideoPlayer from '@/components/VideoPlayer';
+import PTZPanel from '@/components/PTZPanel';
 import { Camera } from '@/lib/api';
 
 export default function PopoutPage() {
@@ -81,7 +82,14 @@ export default function PopoutPage() {
                     selected={false}
                     hasPTZ={camera.has_ptz}
                     allowZoom={true}
+                    forceLowLatency={camera.has_ptz}
+                    hidePtzButtons={camera.has_ptz}
                 />
+                {camera.has_ptz && (
+                    <div style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 10 }}>
+                        <PTZPanel cameraId={camera.id} />
+                    </div>
+                )}
             </div>
         </div>
     );

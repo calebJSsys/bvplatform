@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // In-memory per-IP rate limiter for login brute-force protection.
@@ -92,6 +94,32 @@ func RateLimitLogin(perMinute int) func(http.Handler) http.Handler {
 			if !rl.allow(key) {
 				w.Header().Set("Retry-After", "60")
 				http.Error(w, "too many login attempts; try again in 60 seconds", http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RateLimitPTZMove throttles /ptz/move per (camera, user). A virtual joystick
+// emits ~10 moves/s; this caps a runaway loop at perSecond without throttling
+// normal use. Reuses the same sliding-window limiter as login (the type name
+// is historical — it's a generic per-key window). Keyed cameraID:userID, or
+// cameraID:clientIP when unauthenticated. Stop/presets are user-paced and are
+// intentionally not limited.
+func RateLimitPTZMove(perSecond int) func(http.Handler) http.Handler {
+	rl := newLoginRateLimiter(perSecond, time.Second)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			key := chi.URLParam(r, "id")
+			if c := claimsFromRequest(r); c != nil {
+				key += ":" + c.UserID
+			} else {
+				key += ":" + clientIP(r)
+			}
+			if !rl.allow(key) {
+				w.Header().Set("Retry-After", "1")
+				http.Error(w, "too many PTZ commands", http.StatusTooManyRequests)
 				return
 			}
 			next.ServeHTTP(w, r)
