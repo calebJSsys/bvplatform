@@ -14,7 +14,7 @@ import { milesightPTZGoto, type PTZPresetPanel } from '@/lib/milesight';
 import { usePanel } from '@/components/milesight/shared';
 import VirtualJoystick from './VirtualJoystick';
 
-const MOVE_THROTTLE_MS = 100;   // ~10 ContinuousMove/s — smooth without flooding ONVIF
+const MOVE_THROTTLE_MS = 80;    // ~12 ContinuousMove/s — responsive without flooding ONVIF
 
 export default function PTZPanel({ cameraId }: { cameraId: string }) {
     // Warm the ONVIF client cache so the first joystick move isn't a cold start.
@@ -38,6 +38,14 @@ export default function PTZPanel({ cameraId }: { cameraId: string }) {
 
     const onJoyMove = useCallback((pan: number, tilt: number) => {
         lastVel.current = { pan, tilt };
+        // Entering the deadzone is a decel/stop — never let the throttle delay
+        // it (that delay is felt as the camera gliding past). Flush immediately.
+        if (pan === 0 && tilt === 0) {
+            if (trailing.current) { clearTimeout(trailing.current); trailing.current = null; }
+            lastSentTs.current = Date.now();
+            flush();
+            return;
+        }
         const since = Date.now() - lastSentTs.current;
         if (since >= MOVE_THROTTLE_MS) {
             lastSentTs.current = Date.now();

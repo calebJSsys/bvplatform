@@ -8,6 +8,11 @@
 
 import { useCallback, useRef, useState } from 'react';
 
+// Response-curve exponent: emitted speed = (normalized travel past deadzone)^EASE.
+// >1 eases in — fine, slow control near center, full camera speed only near the
+// rim — which curbs the overshoot a linear (EASE=1) map produces.
+const EASE = 1.8;
+
 interface VirtualJoystickProps {
     size?: number;        // base diameter in px
     deadzone?: number;    // 0..1 — fraction of travel ignored near center
@@ -38,8 +43,12 @@ export default function VirtualJoystick({ size = 120, deadzone = 0.12, onMove, o
         const ny = -dy / radius;                 // invert Y so up = +tilt
         const mag = Math.hypot(nx, ny);
         if (mag < deadzone) { onMove(0, 0); return; }
-        const k = (mag - deadzone) / (1 - deadzone) / mag;   // rescale past deadzone for a smooth start
-        onMove(Math.max(-1, Math.min(1, nx * k)), Math.max(-1, Math.min(1, ny * k)));
+        // Rescale travel past the deadzone to 0..1, then ease-in (^EASE): modest
+        // pulls → slow fine velocity, only a near-full deflection → full speed.
+        const m = Math.min(1, (mag - deadzone) / (1 - deadzone));
+        const speed = Math.pow(m, EASE);
+        const ux = nx / mag, uy = ny / mag;      // unit direction (knob visual still tracks the finger)
+        onMove(Math.max(-1, Math.min(1, ux * speed)), Math.max(-1, Math.min(1, uy * speed)));
     }, [radius, deadzone, onMove]);
 
     const down = (e: React.PointerEvent) => {
