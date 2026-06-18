@@ -816,9 +816,11 @@ function HomeInner() {
                                 globalPaused={globalPaused}
                                 playbackRate={playbackRate}
                             />
-                            {/* Full PTZ panel (joystick + optical zoom + presets) — live PTZ cams only */}
+                            {/* Full PTZ panel (joystick + optical zoom + presets) — live PTZ cams only.
+                                Absolutely positioned over the video: .peek-content is overflow:hidden and
+                                the video-cell fills it 100%, so a flow sibling here would be clipped. */}
                             {peekCamera.has_ptz && isLive && (
-                                <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 14px', background: 'rgba(0,0,0,0.4)' }}>
+                                <div style={{ position: 'absolute', bottom: 56, left: '50%', transform: 'translateX(-50%)', zIndex: 10 }}>
                                     <PTZPanel cameraId={peekCamera.id} />
                                 </div>
                             )}
