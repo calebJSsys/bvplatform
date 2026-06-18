@@ -24,6 +24,13 @@ interface VideoPlayerProps {
     selected?: boolean;
     hasPTZ?: boolean;
     allowZoom?: boolean;
+    /** Force the low-latency go2rtc MSE path for this tile (sub-1s PTZ feedback),
+     *  independent of the global lowlatency_live flag. On browsers without HEVC
+     *  MSE the existing error UI shows (no silent HLS fallback). */
+    forceLowLatency?: boolean;
+    /** Hide the inline ▲▼◀▶+zoom overlay (used in the enlarged peek/popout view,
+     *  where the full PTZPanel — joystick/zoom/presets — provides the controls). */
+    hidePtzButtons?: boolean;
     /** 'high' = main stream, 'low' = sub stream, 'auto' = sub in grid / main in peek */
     streamQuality?: 'auto' | 'high' | 'low';
     /** Show a '🔗 SYNC' badge when synchronized multi-camera playback is active */
@@ -60,6 +67,8 @@ export default function VideoPlayer({
     selected,
     hasPTZ = false,
     allowZoom = false,
+    forceLowLatency = false,
+    hidePtzButtons = false,
     streamQuality = 'auto',
     syncBadge = false,
     scrubbing = false,
@@ -303,7 +312,7 @@ export default function VideoPlayer({
         // fall the whole grid back to HLS. (We do NOT silently auto-fallback
         // to hls.js on a per-tile MSE error — that would hide a broken
         // sidecar behind a working-looking-but-20s grid.)
-        if (lowLatencyEnabled && isMseSupported()) {
+        if ((lowLatencyEnabled || forceLowLatency) && isMseSupported()) {
             const handle = startMsePlayer(video, cameraId, {
                 onPlaying: () => {
                     if (!cancelled) setLoading(false);
@@ -410,7 +419,7 @@ export default function VideoPlayer({
             }
             video.src = '';
         };
-    }, [cameraId, isLive, qualityKey, lowLatencyEnabled]);
+    }, [cameraId, isLive, qualityKey, lowLatencyEnabled, forceLowLatency]);
 
     // ---- PLAYBACK MODE: Direct MP4 segment loading (optimized) ----
     const loadSegmentForTime = useCallback(async (targetMs: number, video: HTMLVideoElement, autoPlay: boolean, suppressLoading = false) => {
@@ -782,6 +791,8 @@ export default function VideoPlayer({
     // --- PTZ Control Handlers ---
     const ptzTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const ptzActiveRef = useRef(false);
+    // Scroll-wheel optical zoom: re-armed on each wheel tick; fires PTZ stop when scrolling ceases.
+    const wheelStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const handlePTZStart = (pan: number, tilt: number, zoom: number) => {
         if (!isLive) return;
@@ -805,8 +816,26 @@ export default function VideoPlayer({
         }, 50);
     };
 
+    // Clear any pending PTZ timers if the tile unmounts mid-interaction.
+    useEffect(() => () => {
+        if (wheelStopRef.current) clearTimeout(wheelStopRef.current);
+        if (ptzTimerRef.current) clearTimeout(ptzTimerRef.current);
+    }, []);
+
     // --- Digital Zoom & Pan Handlers ---
     const handleWheel = (e: React.WheelEvent) => {
+        // On a PTZ camera in live view, the wheel drives the camera's OPTICAL
+        // zoom (ONVIF ContinuousMove), not the digital CSS zoom below. Each tick
+        // re-arms one stop timer, so holding a scroll keeps zooming and motion
+        // halts ~250 ms after scrolling stops. Sits above the !allowZoom guard
+        // so it works in grid tiles too (which pass hasPTZ but not allowZoom).
+        if (hasPTZ && isLive) {
+            e.preventDefault();
+            handlePTZStart(0, 0, e.deltaY < 0 ? 1 : -1);  // wheel up = zoom in
+            if (wheelStopRef.current) clearTimeout(wheelStopRef.current);
+            wheelStopRef.current = setTimeout(() => handlePTZStop(), 250);
+            return;
+        }
         if (!allowZoom) return;
         const zoomDelta = e.deltaY * -0.002;
         setScale((prev) => {
@@ -1067,8 +1096,9 @@ export default function VideoPlayer({
 
             {/* Playback controls removed — now unified in the Timeline transport bar */}
 
-            {/* PTZ Overlay — only shown for cameras with PTZ capability */}
-            {hasPTZ && isLive && !error && !loading && (
+            {/* PTZ Overlay — inline ▲▼◀▶+zoom for grid tiles. Hidden in the
+                enlarged peek/popout view, where PTZPanel provides full control. */}
+            {hasPTZ && isLive && !error && !loading && !hidePtzButtons && (
                 <div style={{
                     position: 'absolute',
                     bottom: '8px',

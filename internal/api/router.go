@@ -184,7 +184,7 @@ func NewRouter(cfg *config.Config, db *database.DB, hub *Hub, recEngine *recordi
 			r.Get("/{id}/recordings", HandleGetRecordings(db))
 
 			// PTZ
-			r.Post("/{id}/ptz/move", HandlePTZMove(db))
+			r.With(RateLimitPTZMove(20)).Post("/{id}/ptz/move", HandlePTZMove(db))
 			r.Post("/{id}/ptz/stop", HandlePTZStop(db))
 			r.Post("/{id}/ptz/prewarm", HandlePTZPrewarm(db))
 

@@ -1013,12 +1013,83 @@ func getPTZClient(ctx context.Context, db *database.DB, cameraID uuid.UUID) (*pt
 	return cached, nil
 }
 
+// ── PTZ dead-man auto-stop ──
+// ContinuousMove has no implicit timeout, so a client that drops mid-drag would
+// leave the camera slewing. Each /ptz/move (re)arms this short timer; if no
+// further move arrives it issues PTZStop. An explicit /ptz/stop cancels it.
+var ptzDeadman = struct {
+	mu     sync.Mutex
+	timers map[string]*time.Timer
+	gen    map[string]uint64
+}{timers: make(map[string]*time.Timer), gen: make(map[string]uint64)}
+
+const ptzDeadmanTimeout = 700 * time.Millisecond
+
+func armPTZDeadman(cached *ptzCachedClient, cameraID string) {
+	ptzDeadman.mu.Lock()
+	defer ptzDeadman.mu.Unlock()
+	if t := ptzDeadman.timers[cameraID]; t != nil {
+		t.Stop()
+	}
+	// Bump the generation. time.Timer.Stop() returns false (and cannot
+	// un-queue the callback) if the timer already fired — so a timer armed by
+	// an earlier move can still have a pending AfterFunc in flight. The
+	// generation check below makes that stale callback no-op instead of firing
+	// a PTZStop into a fresh move (TOCTOU fix).
+	ptzDeadman.gen[cameraID]++
+	myGen := ptzDeadman.gen[cameraID]
+	ptzDeadman.timers[cameraID] = time.AfterFunc(ptzDeadmanTimeout, func() {
+		ptzDeadman.mu.Lock()
+		if ptzDeadman.gen[cameraID] != myGen {
+			// A newer move re-armed us (or a stop cancelled us) between this
+			// timer firing and its callback running — the camera is under
+			// fresh control, so don't issue a stale stop.
+			ptzDeadman.mu.Unlock()
+			return
+		}
+		delete(ptzDeadman.timers, cameraID)
+		ptzDeadman.mu.Unlock()
+
+		// Release the lock before the ONVIF call so a slow stop on one camera
+		// can't serialize arm/cancel on every other camera.
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := cached.client.PTZStop(ctx, cached.profileToken); err != nil {
+			log.Printf("[PTZ] dead-man stop failed for %s: %v", cameraID, err)
+		}
+	})
+}
+
+func cancelPTZDeadman(cameraID string) {
+	ptzDeadman.mu.Lock()
+	defer ptzDeadman.mu.Unlock()
+	if t := ptzDeadman.timers[cameraID]; t != nil {
+		t.Stop()
+		delete(ptzDeadman.timers, cameraID)
+	}
+	// Bump generation so an already-fired-but-not-yet-run AfterFunc from the
+	// timer we just stopped will no-op (see armPTZDeadman).
+	ptzDeadman.gen[cameraID]++
+}
+
 // HandlePTZMove handles continuous PTZ movement
 func HandlePTZMove(db *database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
 			http.Error(w, "invalid camera ID", http.StatusBadRequest)
+			return
+		}
+
+		claims := claimsFromRequest(r)
+		if ok, err := CanAccessCamera(r.Context(), db, claims, id); err != nil || !ok {
+			http.Error(w, "camera not found", http.StatusNotFound)
+			return
+		}
+		// PTZ is physical-device control; customers/viewers don't steer cameras
+		// (mirrors deterrence). Operators / site-managers / admins do.
+		if claims.Role == "customer" || claims.Role == "viewer" {
+			http.Error(w, "PTZ control requires operator or site-manager role", http.StatusForbidden)
 			return
 		}
 
@@ -1033,6 +1104,10 @@ func HandlePTZMove(db *database.DB) http.HandlerFunc {
 			http.Error(w, "camera not found", http.StatusNotFound)
 			return
 		}
+
+		// Arm the dead-man auto-stop (re-armed by each move, cancelled by /ptz/stop)
+		// so a dropped client can't leave the camera slewing.
+		armPTZDeadman(cached, id.String())
 
 		// Respond immediately, process ONVIF call async
 		w.WriteHeader(http.StatusAccepted)
@@ -1057,11 +1132,27 @@ func HandlePTZStop(db *database.DB) http.HandlerFunc {
 			return
 		}
 
+		claims := claimsFromRequest(r)
+		if ok, err := CanAccessCamera(r.Context(), db, claims, id); err != nil || !ok {
+			http.Error(w, "camera not found", http.StatusNotFound)
+			return
+		}
+		// PTZ is physical-device control; customers/viewers don't steer cameras
+		// (mirrors deterrence). Operators / site-managers / admins do.
+		if claims.Role == "customer" || claims.Role == "viewer" {
+			http.Error(w, "PTZ control requires operator or site-manager role", http.StatusForbidden)
+			return
+		}
+
 		cached, err := getPTZClient(r.Context(), db, id)
 		if err != nil {
 			http.Error(w, "camera not found", http.StatusNotFound)
 			return
 		}
+
+		// Explicit stop — cancel any pending dead-man timer so it doesn't fire a
+		// redundant stop later.
+		cancelPTZDeadman(id.String())
 
 		// Respond immediately, process ONVIF call async
 		w.WriteHeader(http.StatusAccepted)
@@ -1087,6 +1178,18 @@ func HandlePTZPrewarm(db *database.DB) http.HandlerFunc {
 			return
 		}
 
+		claims := claimsFromRequest(r)
+		if ok, err := CanAccessCamera(r.Context(), db, claims, id); err != nil || !ok {
+			http.Error(w, "camera not found", http.StatusNotFound)
+			return
+		}
+		// PTZ is physical-device control; customers/viewers don't steer cameras
+		// (mirrors deterrence). Operators / site-managers / admins do.
+		if claims.Role == "customer" || claims.Role == "viewer" {
+			http.Error(w, "PTZ control requires operator or site-manager role", http.StatusForbidden)
+			return
+		}
+
 		// Respond immediately
 		w.WriteHeader(http.StatusOK)
 		writeJSON(w, map[string]string{"status": "warming"})
@@ -1100,8 +1203,10 @@ func HandlePTZPrewarm(db *database.DB) http.HandlerFunc {
 				log.Printf("[PTZ] Prewarm failed: %v", err)
 				return
 			}
-			// Send a harmless PTZStop to warm the TCP connection
-			if err := cached.client.PTZStop(ctx, cached.profileToken); err != nil {
+			// Warm the TCP + WS-Security auth path with a READ-ONLY call.
+			// PTZStop would interrupt another operator's in-progress move
+			// (prewarm fires on every panel open), so use GetDeviceInformation.
+			if _, err := cached.client.GetDeviceInformation(ctx); err != nil {
 				log.Printf("[PTZ] Prewarm connection warm-up (non-fatal): %v", err)
 			} else {
 				log.Printf("[PTZ] Connection pre-warmed for camera %s", id)

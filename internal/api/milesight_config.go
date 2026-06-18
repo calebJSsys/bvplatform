@@ -273,6 +273,12 @@ func HandlePTZPresetGoto(db *database.DB) http.HandlerFunc {
 			http.Error(w, err.Error(), code)
 			return
 		}
+		// Preset recall physically moves the camera — same control class as
+		// PTZ move and deterrence, so customers/viewers don't get it.
+		if claims := claimsFromRequest(r); claims == nil || claims.Role == "customer" || claims.Role == "viewer" {
+			http.Error(w, "PTZ control requires operator or site-manager role", http.StatusForbidden)
+			return
+		}
 		var req struct {
 			Preset int `json:"preset"`
 		}
