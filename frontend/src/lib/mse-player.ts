@@ -67,6 +67,10 @@ export function startMsePlayer(
   // updating, so we queue and drain.
   const queue: ArrayBuffer[] = [];
   let initAppended = false;
+  // Periodic live-edge keeper (see keepLiveEdge): pulls the playhead back
+  // toward live when MSE playback drifts behind, so latency stays bounded for
+  // the whole session — not just at the initial seekToLiveEdge.
+  let keeperTimer: ReturnType<typeof setInterval> | null = null;
 
   const fail = (message: string, detail?: string) => {
     if (closed) return;
@@ -96,6 +100,33 @@ export function startMsePlayer(
       video.currentTime = Math.max(b.start(0), edge - 0.3);
       seekedToLive = true;
       video.play().catch(() => { /* gesture; 'playing' listener covers it */ });
+    }
+  };
+
+  // Live-edge keeper. seekToLiveEdge only sets the *initial* latency; after
+  // that the <video> plays at 1.0x from wherever it is, so any stall / jitter /
+  // tab-throttle leaves the playhead behind the live edge and glass-to-glass
+  // latency creeps up and never recovers — which, on a PTZ tile, reads as "I
+  // move the stick and see it react late, so I overshoot". This runs on a timer
+  // and pulls the playhead back toward ~LIVE_TARGET behind the edge: a small
+  // playbackRate bump for normal drift (no visible jump while panning), a hard
+  // seek only for a large post-stall gap. Safe in live mode — VideoPlayer never
+  // touches playbackRate while live.
+  const LIVE_TARGET = 0.4;   // seconds behind the live edge we aim to hold
+  const NUDGE_AT = 0.9;      // start gentle catch-up once drift exceeds this
+  const SEEK_AT = 3.0;       // hard-seek if we've fallen this far behind
+  const keepLiveEdge = () => {
+    if (!sourceBuffer || sourceBuffer.updating || video.seeking || video.paused) return;
+    const b = video.buffered;
+    if (b.length === 0) return;
+    const drift = b.end(b.length - 1) - video.currentTime;
+    if (drift > SEEK_AT) {
+      video.currentTime = b.end(b.length - 1) - LIVE_TARGET;   // hard catch-up
+      video.playbackRate = 1.0;
+    } else if (drift > NUDGE_AT) {
+      video.playbackRate = 1.1;                                 // ~10% faster, imperceptible
+    } else if (drift <= LIVE_TARGET + 0.1 && video.playbackRate !== 1.0) {
+      video.playbackRate = 1.0;                                 // close enough — normal speed
     }
   };
 
@@ -162,6 +193,7 @@ export function startMsePlayer(
 
   mediaSource = new MediaSource();
   video.src = URL.createObjectURL(mediaSource);
+  keeperTimer = setInterval(keepLiveEdge, 1000);
 
   mediaSource.addEventListener('sourceopen', () => {
     if (closed) return;
@@ -226,6 +258,10 @@ export function startMsePlayer(
     close: () => {
       if (closed) return;
       closed = true;
+      if (keeperTimer) {
+        clearInterval(keeperTimer);
+        keeperTimer = null;
+      }
       if (ws) {
         ws.onmessage = null;
         ws.onerror = null;
