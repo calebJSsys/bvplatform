@@ -146,7 +146,7 @@ func TestProbeAndSelectStream_EmptyFFmpegPath(t *testing.T) {
 // the probe just can't reach it fast enough. The B-15 reconciler corrects the
 // status within ~60 s if the stream really is dead.
 func TestProbeAndSelectStream_AllTimeout_AllowedOptimistically(t *testing.T) {
-	killed := errors.New("ffprobe rtsp://5001.bigview.ai:554/channel1/main: signal: killed")
+	killed := errors.New("ffprobe rtsp://testcam.invalid:554/channel1/main: signal: killed")
 	// Enough inconclusive errors to exhaust all candidates.
 	errs := make([]error, 40)
 	for i := range errs {
@@ -157,12 +157,12 @@ func TestProbeAndSelectStream_AllTimeout_AllowedOptimistically(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	originalURI := "rtsp://admin:pw@5001.bigview.ai:554/channel1/main"
+	originalURI := "rtsp://admin:pw@testcam.invalid:554/channel1/main"
 	gotMain, gotSub, err := ProbeAndSelectStream(
 		ctx, "/usr/bin/ffmpeg",
 		originalURI,
 		"",
-		"5001.bigview.ai:8080",
+		"testcam.invalid:8080",
 	)
 	if err != nil {
 		t.Fatalf("B-16: all-timeout should NOT block create, got error: %v", err)
@@ -196,9 +196,9 @@ func TestProbeAndSelectStream_MixedDefinitiveAndTimeout_Blocks(t *testing.T) {
 
 	gotMain, gotSub, err := ProbeAndSelectStream(
 		ctx, "/usr/bin/ffmpeg",
-		"rtsp://admin:pw@5001.bigview.ai:554/channel1/main",
+		"rtsp://admin:pw@testcam.invalid:554/channel1/main",
 		"",
-		"5001.bigview.ai:8080",
+		"testcam.invalid:8080",
 	)
 	if err == nil {
 		t.Fatal("B-16: mixed definitive+inconclusive should BLOCK create, got nil error")
@@ -225,9 +225,9 @@ func TestProbeAndSelectStream_ContextDeadline_AllowedOptimistically(t *testing.T
 
 	_, _, err := ProbeAndSelectStream(
 		ctx, "/usr/bin/ffmpeg",
-		"rtsp://admin:pw@5001.bigview.ai:554/channel1/main",
+		"rtsp://admin:pw@testcam.invalid:554/channel1/main",
 		"",
-		"5001.bigview.ai:8080",
+		"testcam.invalid:8080",
 	)
 	if err != nil {
 		t.Fatalf("B-16: all-deadline-exceeded should NOT block create, got error: %v", err)

@@ -34,8 +34,8 @@ func TestRTSPCandidateURIs_BigViewNATConvention(t *testing.T) {
 		},
 		{
 			name:          "ONVIF:8081 → RTSP:555 first (second slot)",
-			originalURI:   "rtsp://admin:pw@5001.bigview.ai:554/main",
-			onvifAddress:  "5001.bigview.ai:8081",
+			originalURI:   "rtsp://admin:pw@testcam.invalid:554/main",
+			onvifAddress:  "testcam.invalid:8081",
 			wantFirstPort: "555",
 		},
 		{

@@ -7,19 +7,28 @@ test.use({ storageState: authFile('admin') });
 // Proof for fix/timeline-cross-camera-leak (active-layout scoping).
 //
 // Before the fix the playback timeline queried ALL loaded cameras, so a
-// layout containing only the 5001 cameras still showed camera 504's events.
-// After the fix the timeline scopes to the cameras in the ACTIVE grid layout.
+// layout containing only the event-free cameras still showed an
+// event-bearing camera's events. After the fix the timeline scopes to the
+// cameras in the ACTIVE grid layout.
 //
 // This spec seeds two static layouts in localStorage (CameraGrid reads
 // `ironsight-layouts` / `ironsight-active-layout`), captures every
 // GET /api/timeline request, and asserts:
-//   1. with the 5001-only layout active, camera_ids == exactly the 5001
-//      UUIDs and the timeline returns 0 buckets (5001 has no events);
-//   2. after switching to the 504 layout, the next timeline request carries
-//      the 504 camera UUID and returns >0 buckets (504 has events).
+//   1. with the event-free layout active, camera_ids == exactly those
+//      UUIDs and the timeline returns 0 buckets (those cams have no events);
+//   2. after switching to the event-bearing layout, the next timeline
+//      request carries that camera's UUID and returns >0 buckets.
+//
+// Camera selection is resolved at runtime from the live inventory and the
+// event counts per camera. It NEVER selects the 5001 or 504 cameras — both
+// are live CUSTOMER sites and must never be probed/streamed by the suite.
 // ─────────────────────────────────────────────────────────────────────────
 
 interface Cam { id: string; name: string; }
+
+// 5001 and 504 are live customer sites — exclude them from every selection.
+const isCustomerCam = (c: Cam) =>
+    /(^|\W)504(\W|$)/.test(c.name) || /(^|\W)5001(\W|$)/.test(c.name);
 
 function staticLayout(name: string, cameraIds: string[]) {
     const presets = [
@@ -41,42 +50,59 @@ function timelineCameraIds(url: string): string[] | null {
 }
 
 test.describe('Timeline scopes to the active grid layout @core', () => {
-    test('5001 layout queries only 5001 cameras (no 504 leak); 504 layout queries 504', async ({ page }) => {
+    test('event-free layout queries only its cams (no event-bearing leak); event-bearing layout queries its cam', async ({ page }) => {
         test.setTimeout(120_000);
 
-        // 1. Resolve the real camera UUIDs from the live inventory by name so
-        //    the test is not pinned to hard-coded ids.
+        // 1. Resolve the real camera UUIDs from the live inventory, then split
+        //    them by whether they have events. We need two event-free cameras
+        //    (the empty-timeline layout) and one event-bearing camera (the
+        //    other layout). Never select 5001/504 (live customer sites).
         const res = await page.request.get('/api/cameras');
         expect(res.ok(), `GET /api/cameras -> ${res.status()}`).toBeTruthy();
-        const cameras = (await res.json()) as Cam[];
-        const byName = (needle: string) =>
-            cameras.find(c => c.name.toLowerCase() === needle.toLowerCase())
-            ?? cameras.find(c => c.name.toLowerCase().includes(needle.toLowerCase()));
+        const cameras = ((await res.json()) as Cam[]).filter(c => !isCustomerCam(c));
 
-        const c5001front = byName('5001 front');
-        const c5001back = byName('5001 back');
-        // 504 layout: include a 504 camera that actually has events so the
-        // "504 timeline shows events" half is meaningful. From the test DB,
-        // "504 right ptz" carries all the seeded events.
-        const c504events = byName('504 right ptz') ?? byName('504');
-        expect(c5001front && c5001back && c504events,
-            `expected 5001 front/back + a 504 camera in inventory, got: ${cameras.map(c => c.name).join(', ')}`,
-        ).toBeTruthy();
+        // Probe per-camera event counts so we can pick an event-free pair and
+        // an event-bearing camera without hard-coding any names.
+        const eventCount = async (id: string): Promise<number> => {
+            const r = await page.request.get(`/api/events?camera_id=${id}&limit=1`);
+            if (!r.ok()) return -1;
+            const body = (await r.json()) as any[];
+            return Array.isArray(body) ? body.length : -1;
+        };
+        const eventFree: Cam[] = [];
+        const eventBearing: Cam[] = [];
+        for (const c of cameras) {
+            const n = await eventCount(c.id);
+            if (n === 0) eventFree.push(c);
+            else if (n > 0) eventBearing.push(c);
+            // n < 0 (error) → skip this camera entirely.
+        }
 
-        const ids5001 = [c5001front!.id, c5001back!.id].sort();
-        const ids504 = [c504events!.id].sort();
-        test.info().annotations.push({ type: 'cams-5001', description: ids5001.join(',') });
-        test.info().annotations.push({ type: 'cams-504', description: ids504.join(',') });
+        // Two event-free cameras for the empty-timeline layout, one
+        // event-bearing camera for the other half.
+        const emptyCams = eventFree.slice(0, 2);
+        const eventCam = eventBearing[0];
+        test.skip(
+            emptyCams.length < 2 || !eventCam,
+            'inventory lacks two event-free cameras + one event-bearing camera (excluding 5001/504 customer sites) '
+            + `— cannot prove layout scoping without touching a customer cam. `
+            + `(event-free=${eventFree.length}, event-bearing=${eventBearing.length})`,
+        );
 
-        // 2. Seed both layouts before any page script runs; 5001 active first.
+        const idsEmpty = emptyCams.map(c => c.id).sort();
+        const idsEvent = [eventCam!.id].sort();
+        test.info().annotations.push({ type: 'cams-empty', description: idsEmpty.join(',') });
+        test.info().annotations.push({ type: 'cams-event', description: idsEvent.join(',') });
+
+        // 2. Seed both layouts before any page script runs; empty active first.
         const layouts = [
-            staticLayout('e2e-5001-only', ids5001),
-            staticLayout('e2e-504', ids504),
+            staticLayout('e2e-empty-only', idsEmpty),
+            staticLayout('e2e-events', idsEvent),
         ];
         await page.addInitScript(([ls, active]) => {
             localStorage.setItem('ironsight-layouts', ls as string);
             localStorage.setItem('ironsight-active-layout', active as string);
-        }, [JSON.stringify(layouts), 'e2e-5001-only'] as const);
+        }, [JSON.stringify(layouts), 'e2e-empty-only'] as const);
 
         // 3. Record every /api/timeline request URL + its response body.
         const timelineCalls: { ids: string[] | null; bucketCount: number; url: string }[] = [];
@@ -100,46 +126,46 @@ test.describe('Timeline scopes to the active grid layout @core', () => {
         await expect(page.locator('.video-cell').first()).toBeVisible({ timeout: 20_000 });
         await expect(page.locator('.timeline-container')).toBeVisible({ timeout: 15_000 });
 
-        // 4. Wait for a timeline request that carries the 5001 scope.
+        // 4. Wait for a timeline request that carries the event-free scope.
         await expect.poll(
             () => timelineCalls.some(c => c.ids && c.ids.length === 2
-                && c.ids[0] === ids5001[0] && c.ids[1] === ids5001[1]),
-            { timeout: 30_000, message: `no 5001-scoped /api/timeline seen. Calls: ${JSON.stringify(timelineCalls.map(c => c.ids))}` },
+                && c.ids[0] === idsEmpty[0] && c.ids[1] === idsEmpty[1]),
+            { timeout: 30_000, message: `no event-free-scoped /api/timeline seen. Calls: ${JSON.stringify(timelineCalls.map(c => c.ids))}` },
         ).toBeTruthy();
 
-        const call5001 = [...timelineCalls].reverse().find(c => c.ids && c.ids.length === 2);
-        expect(call5001, 'a 2-camera (5001) timeline call').toBeTruthy();
-        // EXACTLY the two 5001 UUIDs — nothing else leaked in.
-        expect(call5001!.ids).toEqual(ids5001);
-        // 5001 has no events, so the timeline must come back empty.
-        expect(call5001!.bucketCount, `5001 timeline must have 0 events (got ${call5001!.bucketCount})`).toBe(0);
+        const callEmpty = [...timelineCalls].reverse().find(c => c.ids && c.ids.length === 2);
+        expect(callEmpty, 'a 2-camera (event-free) timeline call').toBeTruthy();
+        // EXACTLY the two event-free UUIDs — nothing else leaked in.
+        expect(callEmpty!.ids).toEqual(idsEmpty);
+        // These cameras have no events, so the timeline must come back empty.
+        expect(callEmpty!.bucketCount, `event-free timeline must have 0 events (got ${callEmpty!.bucketCount})`).toBe(0);
 
-        // CRITICAL anti-leak assertion: NO 5001-active timeline request may
-        // carry the 504 camera id.
-        const leaked = timelineCalls.filter(c => c.ids && c.ids.includes(c504events!.id));
+        // CRITICAL anti-leak assertion: NO event-free-active timeline request
+        // may carry the event-bearing camera id.
+        const leaked = timelineCalls.filter(c => c.ids && c.ids.includes(eventCam!.id));
         expect(leaked.length,
-            `504 camera id must NOT appear in a 5001-layout timeline request (leaks: ${JSON.stringify(leaked.map(l => l.ids))})`,
+            `event-bearing camera id must NOT appear in an event-free-layout timeline request (leaks: ${JSON.stringify(leaked.map(l => l.ids))})`,
         ).toBe(0);
 
-        // 5. Switch to the 504 layout via its toolbar chip.
+        // 5. Switch to the event-bearing layout via its toolbar chip.
         const before = timelineCalls.length;
-        await page.getByRole('button', { name: /e2e-504/ }).click();
+        await page.getByRole('button', { name: /e2e-events/ }).click();
 
         await expect.poll(
-            () => timelineCalls.slice(before).some(c => c.ids && c.ids.length === 1 && c.ids[0] === ids504[0]),
-            { timeout: 30_000, message: `no 504-scoped /api/timeline after switch. Calls: ${JSON.stringify(timelineCalls.slice(before).map(c => c.ids))}` },
+            () => timelineCalls.slice(before).some(c => c.ids && c.ids.length === 1 && c.ids[0] === idsEvent[0]),
+            { timeout: 30_000, message: `no event-bearing-scoped /api/timeline after switch. Calls: ${JSON.stringify(timelineCalls.slice(before).map(c => c.ids))}` },
         ).toBeTruthy();
 
-        const call504 = [...timelineCalls].reverse().find(c => c.ids && c.ids.length === 1 && c.ids[0] === ids504[0]);
-        expect(call504, 'a 504-scoped timeline call after switching layout').toBeTruthy();
-        expect(call504!.ids).toEqual(ids504);
-        // 504 (right ptz) has events in the test DB.
-        expect(call504!.bucketCount, `504 timeline must have >0 events (got ${call504!.bucketCount})`).toBeGreaterThan(0);
+        const callEvent = [...timelineCalls].reverse().find(c => c.ids && c.ids.length === 1 && c.ids[0] === idsEvent[0]);
+        expect(callEvent, 'an event-bearing-scoped timeline call after switching layout').toBeTruthy();
+        expect(callEvent!.ids).toEqual(idsEvent);
+        // The event-bearing camera has events in the test DB.
+        expect(callEvent!.bucketCount, `event-bearing timeline must have >0 events (got ${callEvent!.bucketCount})`).toBeGreaterThan(0);
 
         test.info().annotations.push({
             type: 'proof',
-            description: `5001 call ids=${JSON.stringify(call5001!.ids)} buckets=${call5001!.bucketCount}; `
-                + `504 call ids=${JSON.stringify(call504!.ids)} buckets=${call504!.bucketCount}`,
+            description: `event-free call ids=${JSON.stringify(callEmpty!.ids)} buckets=${callEmpty!.bucketCount}; `
+                + `event-bearing call ids=${JSON.stringify(callEvent!.ids)} buckets=${callEvent!.bucketCount}`,
         });
     });
 });

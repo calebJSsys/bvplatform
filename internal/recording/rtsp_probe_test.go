@@ -42,7 +42,7 @@ func TestIsRTSPBandwidthExhausted_NegativeCases(t *testing.T) {
 		{"nil", nil},
 		{"404 not found", errors.New("method DESCRIBE failed: 404 Stream Not Found")},
 		{"401 unauthorized", errors.New("method DESCRIBE failed: 401 Unauthorized")},
-		{"connection refused", errors.New("dial tcp 5001.bigview.ai:554: connect: connection refused")},
+		{"connection refused", errors.New("dial tcp testcam.invalid:554: connect: connection refused")},
 		{"timeout", errors.New("rtsp probe: context deadline exceeded")},
 		{"empty uri sentinel", errors.New("rtsp probe: empty uri")},
 		{"random number lookalike (no 453)", errors.New("ffprobe exit status 1: error 41-7654-xy")},
@@ -223,7 +223,7 @@ func TestClassifyProbeError_DefinitiveFailures(t *testing.T) {
 	}{
 		{"404 not found", "ffprobe rtsp://...: exit status 1 (stderr: method DESCRIBE failed: 404 Stream Not Found)"},
 		{"404 bare", "Server returned 404"},
-		{"connection refused", "dial tcp 5001.bigview.ai:554: connect: connection refused"},
+		{"connection refused", "dial tcp testcam.invalid:554: connect: connection refused"},
 		{"no route to host", "connect: no route to host"},
 		{"401 unauthorized", "method DESCRIBE failed: 401 Unauthorized"},
 		{"401 bare", "Server returned 401"},
@@ -249,7 +249,7 @@ func TestClassifyProbeError_Inconclusive(t *testing.T) {
 		name string
 		msg  string
 	}{
-		{"signal killed", "ffprobe rtsp://5001.bigview.ai:554/channel1/main: signal: killed"},
+		{"signal killed", "ffprobe rtsp://testcam.invalid:554/channel1/main: signal: killed"},
 		{"context deadline exceeded", "ffprobe rtsp://...: context deadline exceeded"},
 		{"context canceled", "ffprobe rtsp://...: context canceled"},
 		// Generic connect timeout — no server fragment → Inconclusive by default.
