@@ -5,10 +5,11 @@ import { recordLiveTraffic } from '../helpers/video';
 // Proof for feat/live-vca-zone-overlay: VideoPlayer overlays a camera's
 // configured VCA detection zones over the LIVE feed as SVG, toggleable.
 //
-// Test camera: "504 front" (d99d8b06) is the platform-VCA demo camera. We
-// read its drawable zone count straight from the API (the same data source
-// the overlay consumes), put it + a 0-zone 504/5001 camera in a 2-up static
-// grid, then:
+// Test camera: a real VCA-capable TEST-fleet PTZ camera (527 or 577 — both
+// Milesight PTZ with VCA zones), resolved by name at runtime. We NEVER use
+// 504 or 5001 — both are live CUSTOMER sites. We read the VCA camera's
+// drawable zone count straight from the API (the same data source the overlay
+// consumes), put it + a 0-zone non-customer camera in a 2-up static grid, then:
 //   1) zones default ON -> the overlay draws >= (one shape per drawable rule);
 //   2) toggle OFF -> shapes disappear from every tile (persisted to LS);
 //   3) toggle back ON -> shapes return;
@@ -20,7 +21,12 @@ import { recordLiveTraffic } from '../helpers/video';
 
 test.use({ storageState: authFile('admin') });
 
-const FRONT_504 = 'd99d8b06';
+// 504 and 5001 are live customer sites — exclude them from every selection.
+const isCustomerCam = (name: string) =>
+    /(^|\W)504(\W|$)/.test(name) || /(^|\W)5001(\W|$)/.test(name);
+// The primary VCA subject is a test-fleet PTZ camera (527 or 577).
+const isVcaTestCam = (name: string) =>
+    /(^|\W)527(\W|$)/.test(name) || /(^|\W)577(\W|$)/.test(name);
 
 // Same client-side layout seeding as nvr.spec.ts: a fresh context has no
 // saved layout, so we pre-seed a static 2-slot layout assigning our two
@@ -48,7 +54,7 @@ async function zoneShapeCount(cell: import('@playwright/test').Locator): Promise
 }
 
 test.describe('Live VCA zone overlay @core', () => {
-    test('504-front renders 4 zones over live, toggle works, 0-zone camera is clean', async ({ page }) => {
+    test('a test-fleet VCA camera renders its zones over live, toggle works, 0-zone camera is clean', async ({ page }) => {
         test.setTimeout(120_000);
 
         // Resolve the camera inventory; the admin request context shares cookies.
@@ -56,34 +62,46 @@ test.describe('Live VCA zone overlay @core', () => {
         expect(camerasRes.ok(), `GET /api/cameras -> HTTP ${camerasRes.status()}`).toBeTruthy();
         const cameras = (await camerasRes.json()) as { id: string; name: string }[];
 
-        const front = cameras.find(c => c.id.startsWith(FRONT_504));
-        expect(front, `test camera 504-front (${FRONT_504}) must be registered`).toBeTruthy();
-
-        // Confirm the platform really reports 4 zones for 504-front (the
-        // overlay can only draw what the API returns).
-        const rulesRes = await page.request.get(`/api/cameras/${front!.id}/vca/rules`);
-        expect(rulesRes.ok(), `GET vca/rules -> HTTP ${rulesRes.status()}`).toBeTruthy();
-        const rules = (await rulesRes.json()) as { enabled: boolean; region: unknown[] }[];
-        const drawable = rules.filter(r => r.enabled && Array.isArray(r.region) && r.region.length >= 2);
-        const expectedZones = drawable.length;
-        test.info().annotations.push({ type: 'vca-rules', description: `504-front: ${rules.length} rules, ${expectedZones} drawable (API)` });
-        // 504-front is the platform-VCA demo camera: it must have at least one
-        // drawable zone, otherwise there is nothing to prove the overlay against.
-        expect(expectedZones, '504-front must have >=1 drawable VCA zone to overlay').toBeGreaterThanOrEqual(1);
-
-        // Pick a 0-zone camera as the negative control (another 504/5001).
-        let zeroZoneCam = cameras.find(c => c.id !== front!.id && /504|5001/i.test(c.name));
-        for (const c of cameras) {
-            if (c.id === front!.id) continue;
-            const r = await page.request.get(`/api/cameras/${c.id}/vca/rules`);
-            if (!r.ok()) continue;
+        // Helper: count an individual camera's drawable VCA zones via the API.
+        const drawableZoneCount = async (id: string): Promise<number> => {
+            const r = await page.request.get(`/api/cameras/${id}/vca/rules`);
+            if (!r.ok()) return -1;
             const rr = (await r.json()) as { enabled: boolean; region: unknown[] }[];
-            const d = rr.filter(x => x.enabled && Array.isArray(x.region) && x.region.length >= 2);
-            if (d.length === 0) { zeroZoneCam = c; break; }
-        }
-        expect(zeroZoneCam, 'need a second camera with 0 zones as negative control').toBeTruthy();
+            return rr.filter(x => x.enabled && Array.isArray(x.region) && x.region.length >= 2).length;
+        };
 
-        // Seed a 2-up static layout: 504-front in slot 0, the 0-zone cam in slot 1.
+        // Pick the PRIMARY VCA subject: a test-fleet PTZ camera (527 or 577)
+        // that actually has at least one drawable VCA zone. Resolved by name at
+        // runtime — never the 504/5001 customer sites.
+        const vcaCandidates = cameras.filter(c => isVcaTestCam(c.name) && !isCustomerCam(c.name));
+        let front: { id: string; name: string } | undefined;
+        let expectedZones = 0;
+        for (const c of vcaCandidates) {
+            const n = await drawableZoneCount(c.id);
+            if (n >= 1) { front = c; expectedZones = n; break; }
+        }
+        test.skip(
+            !front,
+            'no test-fleet VCA camera (527/577) with a drawable zone is registered '
+            + `— cannot prove the overlay without touching a 504/5001 customer site. `
+            + `(candidates: ${vcaCandidates.map(c => c.name).join(', ') || 'none'})`,
+        );
+        test.info().annotations.push({ type: 'vca-rules', description: `${front!.name}: ${expectedZones} drawable zone(s) (API)` });
+        // The chosen camera must have at least one drawable zone, otherwise
+        // there is nothing to prove the overlay against.
+        expect(expectedZones, `${front!.name} must have >=1 drawable VCA zone to overlay`).toBeGreaterThanOrEqual(1);
+
+        // Pick a 0-zone camera as the negative control. Any non-customer
+        // camera with 0 drawable zones works; never a 504/5001 customer site.
+        let zeroZoneCam: { id: string; name: string } | undefined;
+        for (const c of cameras) {
+            if (c.id === front!.id || isCustomerCam(c.name)) continue;
+            const d = await drawableZoneCount(c.id);
+            if (d === 0) { zeroZoneCam = c; break; }
+        }
+        expect(zeroZoneCam, 'need a second non-customer camera with 0 zones as negative control').toBeTruthy();
+
+        // Seed a 2-up static layout: the VCA camera in slot 0, the 0-zone cam in slot 1.
         // Force zones ON regardless of any persisted preference from a prior run.
         await page.addInitScript(([layouts, active]) => {
             localStorage.setItem('ironsight-layouts', layouts);
@@ -101,18 +119,18 @@ test.describe('Live VCA zone overlay @core', () => {
         await expect(frontCell).toBeVisible();
         await expect(zeroCell).toBeVisible();
 
-        // ── 1) Zones default ON: 504-front draws its 4 zone shapes. ──
+        // ── 1) Zones default ON: the VCA camera draws its zone shapes. ──
         // The overlay only renders once the stream is painting (not loading);
         // poll for the SVG shapes to appear. Independent of HEVC decode — the
         // SVG is a sibling of <video>, gated only on isLive && showZones &&
         // !loading && zones.length>0.
         await expect.poll(
             async () => zoneShapeCount(frontCell),
-            { timeout: 30_000, message: '504-front should render its VCA zone shapes' },
+            { timeout: 30_000, message: `${front!.name} should render its VCA zone shapes` },
         ).toBeGreaterThanOrEqual(1);
 
         const onCount = await zoneShapeCount(frontCell);
-        test.info().annotations.push({ type: 'zones-on', description: `504-front zone shapes ON: ${onCount} (expected >=${expectedZones})` });
+        test.info().annotations.push({ type: 'zones-on', description: `${front!.name} zone shapes ON: ${onCount} (expected >=${expectedZones})` });
         // One shape per drawable rule minimum (a tripwire adds an extra
         // direction-arrow <line>, so the count can exceed the rule count).
         expect(onCount, 'should render at least one shape per drawable rule').toBeGreaterThanOrEqual(expectedZones);
