@@ -17,7 +17,7 @@ test.use({ storageState: authFile('admin') });
 //      details payload, and a "Jump to video" control. Close works.
 //
 // Camera-agnostic: we DO NOT hardcode a UUID. We resolve a thumbnail-bearing
-// camera from the live inventory. We NEVER pick 504 or 5001 — both are live
+// camera from the live inventory. We NEVER pick 504, 5001, or 577 — both are live
 // CUSTOMER sites and must not be probed or streamed by the suite.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -35,7 +35,7 @@ function staticLayout(name: string, cameraIds: string[]) {
 }
 
 // Pick the camera to drive the feed with: the first camera in the inventory
-// that has thumbnail-bearing events. NEVER 504 or 5001 — both are live
+// that has thumbnail-bearing events. NEVER 504, 5001, or 577 — both are live
 // customer sites.
 async function pickThumbnailCamera(page: any): Promise<{ cam: Cam; withThumb: number } | null> {
     const res = await page.request.get('/api/cameras');
@@ -45,8 +45,9 @@ async function pickThumbnailCamera(page: any): Promise<{ cam: Cam; withThumb: nu
 
     const is504 = (c: Cam) => /(^|\W)504(\W|$)/.test(c.name);
     const is5001 = (c: Cam) => /(^|\W)5001(\W|$)/.test(c.name);
-    // Any camera that is NOT a customer site (504 or 5001).
-    const candidates = cameras.filter(c => !is504(c) && !is5001(c));
+    const is577 = (c: Cam) => /(^|\W)577(\W|$)/.test(c.name);
+    // Any camera that is NOT a customer site (504, 5001, or 577).
+    const candidates = cameras.filter(c => !is504(c) && !is5001(c) && !is577(c));
 
     for (const cam of candidates) {
         const evRes = await page.request.get(`/api/events?camera_id=${cam.id}&limit=50`);
@@ -59,7 +60,7 @@ async function pickThumbnailCamera(page: any): Promise<{ cam: Cam; withThumb: nu
     // now. The caller turns this into a test.skip (not a hard failure) — the
     // test environment can transiently lack captured thumbnails (fresh deploy,
     // idle fleet) and that's not a regression in THIS feature. We never fall
-    // back to 504 or 5001 (live customer sites).
+    // back to 504, 5001, or 577 (live customer sites).
     return null;
 }
 
@@ -67,13 +68,13 @@ test.describe('Alert feed shows snapshots + click-to-detail modal @core', () => 
     test('a feed row renders the snapshot, and clicking it opens the detail modal', async ({ page }) => {
         test.setTimeout(120_000);
 
-        // 1. Resolve a thumbnail-bearing camera (never 504 or 5001 — both are
+        // 1. Resolve a thumbnail-bearing camera (never 504, 5001, or 577 — both are
         //    live customer sites).
         const picked = await pickThumbnailCamera(page);
         test.skip(
             !picked,
             'No non-customer camera has thumbnail-bearing events yet (capture pending / idle fleet) — '
-            + 'nothing to assert without touching a live customer site (504 or 5001).',
+            + 'nothing to assert without touching a live customer site (504, 5001, or 577).',
         );
         const { cam, withThumb } = picked!;
         test.info().annotations.push({

@@ -46,10 +46,10 @@ func TestRewriteStreamHost_NATPortDerivation(t *testing.T) {
 		},
 		{
 			name:         "ONVIF:8083 → RTSP:557 (fourth camera slot)",
-			xAddr:        "http://577.bigview.ai:8083/onvif/device_service",
+			xAddr:        "http://testcam.invalid:8083/onvif/device_service",
 			inputURI:     "rtsp://192.168.50.4:554/channel1/main",
 			wantPort:     "557",
-			wantHostPart: "577.bigview.ai",
+			wantHostPart: "testcam.invalid",
 		},
 	}
 
@@ -95,7 +95,7 @@ func TestRewriteStreamHost_PublicAlready(t *testing.T) {
 // ONVIF-reported path (/channel1/main) is preserved through the NAT rewrite;
 // the rewrite must not drop or mangle the path.
 func TestRewriteStreamHost_NAT_PanoPath(t *testing.T) {
-	c := &Client{XAddr: "http://577.bigview.ai:8081/onvif/device_service"}
+	c := &Client{XAddr: "http://testcam.invalid:8081/onvif/device_service"}
 	input := "rtsp://192.168.50.10:554/channel1/main"
 	got := c.rewriteStreamHost(input)
 	if !strings.Contains(got, "/channel1/main") {

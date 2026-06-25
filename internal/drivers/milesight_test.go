@@ -32,7 +32,7 @@ func TestNormalizeRTSPURI_B14_PortGuard(t *testing.T) {
 		},
 		{
 			name:     "NAT port 557 preserved (slot 4)",
-			input:    "rtsp://admin:pass@577.bigview.ai:557/channel1/main",
+			input:    "rtsp://admin:pass@testcam.invalid:557/channel1/main",
 			wantPort: "557",
 		},
 		// Legitimate HTTP/HTTPS tunneling ports must be preserved.

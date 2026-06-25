@@ -5,9 +5,9 @@ import { recordLiveTraffic } from '../helpers/video';
 // Proof for feat/live-vca-zone-overlay: VideoPlayer overlays a camera's
 // configured VCA detection zones over the LIVE feed as SVG, toggleable.
 //
-// Test camera: a real VCA-capable TEST-fleet PTZ camera (527 or 577 — both
+// Test camera: the remaining VCA-capable TEST-fleet PTZ camera (527 —
 // Milesight PTZ with VCA zones), resolved by name at runtime. We NEVER use
-// 504 or 5001 — both are live CUSTOMER sites. We read the VCA camera's
+// 504, 5001, or 577 — all are live CUSTOMER sites. We read the VCA camera's
 // drawable zone count straight from the API (the same data source the overlay
 // consumes), put it + a 0-zone non-customer camera in a 2-up static grid, then:
 //   1) zones default ON -> the overlay draws >= (one shape per drawable rule);
@@ -21,12 +21,12 @@ import { recordLiveTraffic } from '../helpers/video';
 
 test.use({ storageState: authFile('admin') });
 
-// 504 and 5001 are live customer sites — exclude them from every selection.
+// 504, 5001, and 577 are live customer sites — exclude them from every selection.
 const isCustomerCam = (name: string) =>
-    /(^|\W)504(\W|$)/.test(name) || /(^|\W)5001(\W|$)/.test(name);
-// The primary VCA subject is a test-fleet PTZ camera (527 or 577).
+    /(^|\W)504(\W|$)/.test(name) || /(^|\W)5001(\W|$)/.test(name) || /(^|\W)577(\W|$)/.test(name);
+// The primary VCA subject is the remaining test-fleet PTZ camera (527).
 const isVcaTestCam = (name: string) =>
-    /(^|\W)527(\W|$)/.test(name) || /(^|\W)577(\W|$)/.test(name);
+    /(^|\W)527(\W|$)/.test(name);
 
 // Same client-side layout seeding as nvr.spec.ts: a fresh context has no
 // saved layout, so we pre-seed a static 2-slot layout assigning our two
@@ -70,7 +70,7 @@ test.describe('Live VCA zone overlay @core', () => {
             return rr.filter(x => x.enabled && Array.isArray(x.region) && x.region.length >= 2).length;
         };
 
-        // Pick the PRIMARY VCA subject: a test-fleet PTZ camera (527 or 577)
+        // Pick the PRIMARY VCA subject: the remaining test-fleet PTZ camera (527)
         // that actually has at least one drawable VCA zone. Resolved by name at
         // runtime — never the 504/5001 customer sites.
         const vcaCandidates = cameras.filter(c => isVcaTestCam(c.name) && !isCustomerCam(c.name));
@@ -82,8 +82,8 @@ test.describe('Live VCA zone overlay @core', () => {
         }
         test.skip(
             !front,
-            'no test-fleet VCA camera (527/577) with a drawable zone is registered '
-            + `— cannot prove the overlay without touching a 504/5001 customer site. `
+            'no test-fleet VCA camera (527) with a drawable zone is registered '
+            + `— cannot prove the overlay without touching a 504/5001/577 customer site. `
             + `(candidates: ${vcaCandidates.map(c => c.name).join(', ') || 'none'})`,
         );
         test.info().annotations.push({ type: 'vca-rules', description: `${front!.name}: ${expectedZones} drawable zone(s) (API)` });

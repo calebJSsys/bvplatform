@@ -20,15 +20,15 @@ test.use({ storageState: authFile('admin') });
 //      request carries that camera's UUID and returns >0 buckets.
 //
 // Camera selection is resolved at runtime from the live inventory and the
-// event counts per camera. It NEVER selects the 5001 or 504 cameras — both
-// are live CUSTOMER sites and must never be probed/streamed by the suite.
+// event counts per camera. It NEVER selects the 504, 5001, or 577 cameras —
+// all are live CUSTOMER sites and must never be probed/streamed by the suite.
 // ─────────────────────────────────────────────────────────────────────────
 
 interface Cam { id: string; name: string; }
 
-// 5001 and 504 are live customer sites — exclude them from every selection.
+// 504, 5001, and 577 are live customer sites — exclude them from every selection.
 const isCustomerCam = (c: Cam) =>
-    /(^|\W)504(\W|$)/.test(c.name) || /(^|\W)5001(\W|$)/.test(c.name);
+    /(^|\W)504(\W|$)/.test(c.name) || /(^|\W)5001(\W|$)/.test(c.name) || /(^|\W)577(\W|$)/.test(c.name);
 
 function staticLayout(name: string, cameraIds: string[]) {
     const presets = [

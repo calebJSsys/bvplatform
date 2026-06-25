@@ -28,8 +28,8 @@ func TestRTSPCandidateURIs_BigViewNATConvention(t *testing.T) {
 		},
 		{
 			name:          "ONVIF:8083 → RTSP:557 first (fourth slot)",
-			originalURI:   "rtsp://admin:pw@577.bigview.ai:554/channel1/main",
-			onvifAddress:  "577.bigview.ai:8083",
+			originalURI:   "rtsp://admin:pw@testcam.invalid:554/channel1/main",
+			onvifAddress:  "testcam.invalid:8083",
 			wantFirstPort: "557",
 		},
 		{
@@ -71,8 +71,8 @@ func TestRTSPCandidateURIs_PathPreserved(t *testing.T) {
 	// Panoramic camera reports /channel1/main — that path must appear in
 	// the first (convention-derived-port) candidate.
 	candidates := RTSPCandidateURIs(
-		"rtsp://admin:pw@577.bigview.ai:554/channel1/main",
-		"577.bigview.ai:8082",
+		"rtsp://admin:pw@testcam.invalid:554/channel1/main",
+		"testcam.invalid:8082",
 		"main",
 	)
 	if len(candidates) == 0 {
